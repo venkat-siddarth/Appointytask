@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"regexp"
 	"sync"
@@ -73,7 +72,8 @@ func (h *userHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	result := collection.FindOne(ctx, bson.M{"_id": objId})
 	var parsedData bson.M
 	if err := result.Decode(&parsedData); err != nil {
-		log.Fatal(err)
+
+		notFound(w, r)
 	}
 	fmt.Println(parsedData)
 }
@@ -108,7 +108,7 @@ func (h *userHandler) GetPost(w http.ResponseWriter, r *http.Request) {
 	result := collection.FindOne(ctx, bson.M{"_id": objId})
 	var parsedData bson.M
 	if err := result.Decode(&parsedData); err != nil {
-		log.Fatal(err)
+		notFound(w, r)
 	}
 	fmt.Println(parsedData)
 }
@@ -129,7 +129,7 @@ func (h *userHandler) AllPosts(w http.ResponseWriter, r *http.Request) {
 	result, _ := collection.Find(ctx, bson.M{"userID": objId})
 	var parsedData bson.M
 	if err := result.Decode(&parsedData); err != nil {
-		log.Fatal(err)
+		notFound(w, r)
 	}
 	fmt.Println(parsedData)
 
