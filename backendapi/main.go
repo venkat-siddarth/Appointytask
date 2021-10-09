@@ -31,11 +31,11 @@ type users struct {
 	Password string             `json:"password,omitempty" bson:"password,omitempty"`
 }
 type posts struct {
-	ID        primitive.ObjectID  `json:"id,omitempty" bson:"_id,omitempty"`
-	UserID    string              `json:"userid,omitempty" bson:"userid,omitempty"`
-	Caption   string              `json:"caption,omitempty" bson:"caption,omitempty"`
-	ImgURL    string              `json:"imgurl,omitempty" bson:"imgurl,omitempty"`
-	Timestamp primitive.Timestamp `json:"tmpstamp,omitempty" bson:"tmpstamp,omitempty"`
+	ID        primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
+	UserID    string             `json:"userid,omitempty" bson:"userid,omitempty"`
+	Caption   string             `json:"caption,omitempty" bson:"caption,omitempty"`
+	ImgURL    string             `json:"imgurl,omitempty" bson:"imgurl,omitempty"`
+	Timestamp time.Time          `json:"tmpstamp,omitempty" bson:"tmpstamp,omitempty"`
 }
 type userHandler struct {
 	*sync.RWMutex
@@ -46,8 +46,6 @@ func (h *userHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("content-type", "application/json")
 	err := json.NewDecoder(r.Body).Decode(&userobj)
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	clientOptions := options.Client().ApplyURI("mongodb://localhost:27017")
-	client, _ := mongo.Connect(ctx, clientOptions)
 	collection := client.Database("UsersData").Collection("users")
 	collection.InsertOne(ctx, userobj)
 	if err != nil {
@@ -65,8 +63,6 @@ func (h *userHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	}
 	user_id := matches[1]
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	clientOptions := options.Client().ApplyURI("mongodb://localhost:27017")
-	client, _ := mongo.Connect(ctx, clientOptions)
 	collection := client.Database("UsersData").Collection("users")
 	objId, _ := primitive.ObjectIDFromHex(user_id)
 	result := collection.FindOne(ctx, bson.M{"_id": objId})
@@ -75,25 +71,26 @@ func (h *userHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 
 		notFound(w, r)
 	}
-	fmt.Println(parsedData)
+	parsedString, _ := json.Marshal(parsedData)
+	fmt.Fprint(w, string(parsedString))
+
 }
 func (h *userHandler) CreatePost(w http.ResponseWriter, r *http.Request) {
+	//defer client.
 	var postobj posts
 	w.Header().Add("content-type", "application/json")
 	err := json.NewDecoder(r.Body).Decode(&postobj)
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	clientOptions := options.Client().ApplyURI("mongodb://localhost:27017")
-	client, _ := mongo.Connect(ctx, clientOptions)
 	collection := client.Database("UsersData").Collection("posts")
 	collection.InsertOne(ctx, postobj)
 	if err != nil {
-		notFound(w, r)
+		fmt.Println(err)
 		return
 	}
 }
 
 func (h *userHandler) GetPost(w http.ResponseWriter, r *http.Request) {
-	matches := getusers.FindStringSubmatch(r.URL.Path)
+	matches := getposts.FindStringSubmatch(r.URL.Path)
 	fmt.Println(matches)
 	if len(matches) < 2 {
 		notFound(w, r)
@@ -101,8 +98,6 @@ func (h *userHandler) GetPost(w http.ResponseWriter, r *http.Request) {
 	}
 	post_id := matches[1]
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	clientOptions := options.Client().ApplyURI("mongodb://localhost:27017")
-	client, _ := mongo.Connect(ctx, clientOptions)
 	collection := client.Database("UsersData").Collection("posts")
 	objId, _ := primitive.ObjectIDFromHex(post_id)
 	result := collection.FindOne(ctx, bson.M{"_id": objId})
@@ -110,29 +105,35 @@ func (h *userHandler) GetPost(w http.ResponseWriter, r *http.Request) {
 	if err := result.Decode(&parsedData); err != nil {
 		notFound(w, r)
 	}
-	fmt.Println(parsedData)
+	parsedString, _ := json.Marshal(parsedData)
+	fmt.Fprint(w, string(parsedString))
+
 }
 
 func (h *userHandler) AllPosts(w http.ResponseWriter, r *http.Request) {
-	matches := getusers.FindStringSubmatch(r.URL.Path)
+	matches := allposts.FindStringSubmatch(r.URL.Path)
 	fmt.Println(matches)
 	if len(matches) < 2 {
 		notFound(w, r)
 		return
 	}
 	user_id := matches[1]
+	fmt.Println(user_id)
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	clientOptions := options.Client().ApplyURI("mongodb://localhost:27017")
-	client, _ := mongo.Connect(ctx, clientOptions)
 	collection := client.Database("UsersData").Collection("posts")
-	objId, _ := primitive.ObjectIDFromHex(user_id)
-	result, _ := collection.Find(ctx, bson.M{"userID": objId})
-	var parsedData bson.M
-	if err := result.Decode(&parsedData); err != nil {
+	cursor, err := collection.Find(ctx, bson.M{})
+	if err != nil {
 		notFound(w, r)
 	}
-	fmt.Println(parsedData)
+	if err == nil {
+		var parsedData []bson.M
+		if err := cursor.All(ctx, &parsedData); err != nil {
+			notFound(w, r)
+		}
+		parsedString, _ := json.Marshal(parsedData)
+		fmt.Fprint(w, string(parsedString))
 
+	}
 }
 func notFound(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotFound)
@@ -174,14 +175,12 @@ func main() {
 	testUser.Name = "default"
 	testUser.Password = "default"
 	mux := http.NewServeMux()
+	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	clientOptions := options.Client().ApplyURI("mongodb://localhost:27017")
+	client, _ = mongo.Connect(ctx, clientOptions)
 	server := &userHandler{}
 	mux.Handle("/", server)
-	clientOptions := options.Client().ApplyURI("mongodb://localhost:27017")
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	_, err := mongo.Connect(ctx, clientOptions)
-	fmt.Println("Mongo connection successful", err)
-	if err == nil {
-	}
+	fmt.Println("Mongo connection successful")
 	mux.Handle("/users/", server)
 	mux.Handle("/users", server)
 	mux.Handle("/posts", server)
